@@ -49,3 +49,6 @@ Scoreboard he watches: e.g. Tuesday after an all-loss Monday = 15.6% historicall
 wants to beat cells like that by process, not abstention — he has refused day-skipping
 rules ([[nomans-trading-goals-and-boundaries]]). He trades demo/challenge accounts;
 account rarely tagged in journal — worth asking which account a trade was on.
+
+Repo: https://github.com/nomss/trade-row-lab (public, remote "origin", branch master).
+After appending rows: copy memory files into memory/, git add -A, commit, push.
