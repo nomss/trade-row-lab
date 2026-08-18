@@ -1,0 +1,7 @@
+# Track only the trade-row lab; journals and media stay local
+*
+!.gitignore
+!README.md
+!trade-rows.csv
+!memory/
+!memory/*

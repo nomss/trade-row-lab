@@ -1,0 +1,3 @@
+- [Trade row workflow](trade-row-workflow.md) — ACTIVE standing job: he annotates charts on F:\Forex\Backtest, Claude reads PNGs and appends rows to trade-rows.csv; closed vocabulary, 100-row finish line.
+- [Trading baseline 2025-2026](trading-baseline-2025-2026.md) — 726 trades parsed: 32.9% baseline, which filters replicate out-of-sample, and the dead ends not worth re-running.
+- [Noman's trading goals and boundaries](nomans-trading-goals-and-boundaries.md) — wants 70% win rate and size, has parked R; how to handle that and what his record says about sizing up.
