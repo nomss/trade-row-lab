@@ -5,3 +5,5 @@
 !trade-rows.csv
 !memory/
 !memory/*
+!backlog_queue.txt
+!wed_queue.txt
