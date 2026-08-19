@@ -7,3 +7,5 @@
 !memory/*
 !backlog_queue.txt
 !wed_queue.txt
+!tools/
+!tools/*

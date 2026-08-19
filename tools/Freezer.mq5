@@ -1,0 +1,200 @@
+//+------------------------------------------------------------------+
+//| Freezer.mq5 — BlindLab chart freezer                             |
+//| LIVE  : snapshots each watch symbol as SYM_F frozen at "now"     |
+//| BLIND : random symbol+day, scaled & date-shifted, as TEST_n      |
+//| No trading functions anywhere in this file.                      |
+//+------------------------------------------------------------------+
+#property copyright "BlindLab"
+#property version   "1.00"
+#property script_show_inputs
+
+enum ENUM_FREEZE_MODE { MODE_LIVE=0, MODE_BLIND=1 };
+
+input ENUM_FREEZE_MODE InpMode          = MODE_LIVE;
+input string  InpSymbols                = "NASUSD,U30USD,SPXUSD,XAUUSD,USOUSD,EURUSD,GBPUSD,USDCAD,USDJPY,AUDUSD";
+input int     InpFreezeServerHour       = 16;    // blind freeze: 16:30 server = 9:30 AM EST (Coinexx)
+input int     InpFreezeServerMin        = 30;
+input int     InpContextDays            = 60;    // visible history before the freeze
+input int     InpFutureHours            = 30;    // hidden continuation (blind mode)
+input int     InpKeepTests              = 30;    // keep newest N TEST symbols, delete older
+
+//--- xor-hex encoding for key/buffer files (casual-open protection only)
+string XorHex(const string s)
+  {
+   string r="";
+   for(int i=0;i<StringLen(s);i++)
+      r+=StringFormat("%02X",(int)(StringGetCharacter(s,i)^0x5A));
+   return r;
+  }
+
+bool WriteText(const string path,const string content)
+  {
+   int h=FileOpen(path,FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(h==INVALID_HANDLE){ Print("BlindLab: cannot write ",path," err=",GetLastError()); return false; }
+   FileWriteString(h,content);
+   FileClose(h);
+   return true;
+  }
+
+int SplitSymbols(string &out[])
+  {
+   string parts[];
+   int n=StringSplit(InpSymbols,',',parts);
+   ArrayResize(out,0);
+   for(int i=0;i<n;i++)
+     {
+      string s=parts[i];
+      StringTrimLeft(s); StringTrimRight(s);
+      if(s=="") continue;
+      if(!SymbolSelect(s,true)){ Print("BlindLab: symbol not found: ",s); continue; }
+      int k=ArraySize(out); ArrayResize(out,k+1); out[k]=s;
+     }
+   return ArraySize(out);
+  }
+
+bool DisguiseAndReplace(const string custom,MqlRates &src[],const double factor,const long shiftSec,const int digits)
+  {
+   int n=ArraySize(src);
+   if(n<=0) return false;
+   MqlRates dst[];
+   ArrayResize(dst,n);
+   for(int i=0;i<n;i++)
+     {
+      dst[i]=src[i];
+      dst[i].time =(datetime)((long)src[i].time - shiftSec);
+      dst[i].open =NormalizeDouble(src[i].open *factor,digits);
+      dst[i].high =NormalizeDouble(src[i].high *factor,digits);
+      dst[i].low  =NormalizeDouble(src[i].low  *factor,digits);
+      dst[i].close=NormalizeDouble(src[i].close*factor,digits);
+      dst[i].spread=0;
+     }
+   long total=CustomRatesReplace(custom,dst[0].time,dst[n-1].time,dst);
+   return(total>0);
+  }
+
+bool MakeCustom(const string name,const string origin)
+  {
+   ResetLastError();
+   if(!CustomSymbolCreate(name,"BlindLab",origin))
+     {
+      if(GetLastError()!=5300 && GetLastError()!=4301 && GetLastError()!=5304)
+         Print("BlindLab: CustomSymbolCreate(",name,") err=",GetLastError());
+      // may already exist — that is fine for LIVE (we recreate data below)
+     }
+   return SymbolSelect(name,true);
+  }
+
+//--- find next free TEST index and clean old ones
+int NextTestIndex()
+  {
+   int last=0;
+   for(int i=1;i<=2000;i++)
+      if(SymbolInfoInteger("TEST_"+(string)i,SYMBOL_CUSTOM)) last=i;
+   // cleanup
+   for(int i=1;i<=last-InpKeepTests;i++)
+     {
+      string nm="TEST_"+(string)i;
+      if(SymbolInfoInteger(nm,SYMBOL_CUSTOM))
+        {
+         SymbolSelect(nm,false);
+         CustomSymbolDelete(nm);
+        }
+     }
+   return last+1;
+  }
+
+void DoLive()
+  {
+   string syms[];
+   int n=SplitSymbols(syms);
+   datetime freeze=TimeCurrent();
+   int done=0;
+   for(int i=0;i<n;i++)
+     {
+      string src=syms[i];
+      string dst=src+"_F";
+      int digits=(int)SymbolInfoInteger(src,SYMBOL_DIGITS);
+      MqlRates rates[];
+      datetime from=freeze-(long)InpContextDays*86400;
+      int got=CopyRates(src,PERIOD_M5,from,freeze,rates);
+      if(got<100){ Print("BlindLab: not enough M5 history for ",src," got=",got); continue; }
+      if(!MakeCustom(dst,src)) continue;
+      if(!DisguiseAndReplace(dst,rates,1.0,0,digits)) { Print("BlindLab: rates failed ",dst); continue; }
+      // key file (live is not secret; still encoded for uniformity)
+      string key="LIVE|"+src+"|"+(string)(long)freeze+"|1.0|0";
+      WriteText("BlindLab\\key_"+dst+".txt",XorHex(key));
+      done++;
+     }
+   Alert("BlindLab LIVE freeze done: ",done," symbols frozen at ",TimeToString(freeze,TIME_DATE|TIME_MINUTES),
+         " — open the *_F charts. Stepper key N = +5min from real feed.");
+  }
+
+void DoBlind()
+  {
+   string syms[];
+   int n=SplitSymbols(syms);
+   if(n==0){ Alert("BlindLab: no valid symbols"); return; }
+   MathSrand((int)TimeLocal()+(int)GetTickCount());
+   for(int attempt=0;attempt<300;attempt++)
+     {
+      string src=syms[MathRand()%n];
+      int digits=(int)SymbolInfoInteger(src,SYMBOL_DIGITS);
+      int total=Bars(src,PERIOD_M5);
+      if(total<20000) continue;
+      int idx=(int)(( (double)MathRand()/32768.0 )*(total-9000))+3000;   // random bar, away from both ends
+      datetime t[];
+      if(CopyTime(src,PERIOD_M5,idx,1,t)!=1) continue;
+      MqlDateTime dt; TimeToStruct(t[0],dt);
+      if(dt.day_of_week<1 || dt.day_of_week>5) continue;
+      dt.hour=InpFreezeServerHour; dt.min=InpFreezeServerMin; dt.sec=0;
+      datetime freeze=StructToTime(dt);
+      datetime ctxFrom=freeze-(long)InpContextDays*86400;
+      datetime futTo  =freeze+(long)InpFutureHours*3600;
+      datetime firstBar[]; datetime lastBar[];
+      if(CopyTime(src,PERIOD_M5,total-1,1,firstBar)!=1) continue;
+      if(CopyTime(src,PERIOD_M5,0,1,lastBar)!=1) continue;
+      if(ctxFrom<firstBar[0] || futTo>lastBar[0]) continue;
+
+      MqlRates ctx[];
+      if(CopyRates(src,PERIOD_M5,ctxFrom,freeze,ctx)<1000) continue;
+      MqlRates fut[];
+      if(CopyRates(src,PERIOD_M5,(datetime)((long)freeze+1),futTo,fut)<12) continue;
+
+      // disguise parameters
+      double factor=MathPow(10.0,((double)MathRand()/32768.0)*0.85-0.45);   // ~0.35 .. 2.5
+      factor=NormalizeDouble(factor,4);
+      long weeks=((long)freeze-(long)D'2023.06.05 00:00')/(7*86400);
+      long shiftSec=weeks*7*86400;                                          // lands week of 2023-06-05, weekday kept
+
+      int tn=NextTestIndex();
+      string dst="TEST_"+(string)tn;
+      if(!MakeCustom(dst,src)) continue;
+      if(!DisguiseAndReplace(dst,ctx,factor,shiftSec,digits)) continue;
+
+      // hidden continuation buffer (disguised, encoded)
+      string buf="";
+      for(int i=0;i<ArraySize(fut);i++)
+         buf+=(string)((long)fut[i].time-shiftSec)+"|"+
+              DoubleToString(NormalizeDouble(fut[i].open *factor,digits),digits)+"|"+
+              DoubleToString(NormalizeDouble(fut[i].high *factor,digits),digits)+"|"+
+              DoubleToString(NormalizeDouble(fut[i].low  *factor,digits),digits)+"|"+
+              DoubleToString(NormalizeDouble(fut[i].close*factor,digits),digits)+"|"+
+              (string)fut[i].tick_volume+"\n";
+      WriteText("BlindLab\\buf_"+dst+".txt",XorHex(buf));
+
+      string key="BLIND|"+src+"|"+(string)(long)freeze+"|"+DoubleToString(factor,4)+"|"+(string)shiftSec;
+      WriteText("BlindLab\\key_"+dst+".txt",XorHex(key));
+
+      Alert("BlindLab BLIND ready: open chart ",dst,
+            "  (frozen at its 9:30 EST; attach Stepper, N=+5min, H=+1h). Guess the instrument before unmasking!");
+      return;
+     }
+   Alert("BlindLab: could not find a suitable random day (not enough M5 history?)");
+  }
+
+void OnStart()
+  {
+   if(InpMode==MODE_LIVE) DoLive();
+   else                   DoBlind();
+  }
+//+------------------------------------------------------------------+
