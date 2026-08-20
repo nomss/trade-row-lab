@@ -17,6 +17,7 @@ input int     InpFreezeServerMin        = 30;
 input int     InpContextDays            = 60;    // visible history before the freeze
 input int     InpFutureHours            = 30;    // hidden continuation (blind mode)
 input int     InpKeepTests              = 30;    // keep newest N TEST symbols, delete older
+input int     InpDeckProb               = 70;    // % of blind rounds drawn from own-trade-day deck
 
 //--- xor-hex encoding for key/buffer files (casual-open protection only)
 string XorHex(const string s)
@@ -91,6 +92,34 @@ bool MakeCustom(const string name,const string origin)
    return SymbolSelect(name,true);
   }
 
+string HexUnxor(const string hex)
+  {
+   string r="";
+   int n=StringLen(hex);
+   for(int i=0;i+1<n;i+=2)
+     {
+      string b=StringSubstr(hex,i,2);
+      int v=(int)StringToInteger("0x"+b);
+      r+=CharToString((uchar)(v^0x5A));
+     }
+   return r;
+  }
+
+int LoadDeck(string &out[])
+  {
+   int h=FileOpen("BlindLab\\deck.txt",FILE_READ|FILE_TXT|FILE_ANSI);
+   if(h==INVALID_HANDLE) return 0;
+   string enc="";
+   while(!FileIsEnding(h)) enc+=FileReadString(h);
+   FileClose(h);
+   string raw=HexUnxor(enc);
+   int n=StringSplit(raw,'\n',out);
+   int m=0;
+   for(int i=0;i<n;i++) if(StringLen(out[i])>6) out[m++]=out[i];
+   ArrayResize(out,m);
+   return m;
+  }
+
 //--- find next free TEST index and clean old ones
 int NextTestIndex()
   {
@@ -161,19 +190,41 @@ void DoBlind()
    int n=SplitSymbols(syms);
    if(n==0){ Alert("BlindLab: no valid symbols"); return; }
    MathSrand((int)TimeLocal()+(int)GetTickCount());
+   string deckArr[];
+   int deckN=LoadDeck(deckArr);
+   bool fromDeck=false;
    for(int attempt=0;attempt<300;attempt++)
      {
-      string src=syms[MathRand()%n];
+      string src="";
+      datetime freeze=0;
+      fromDeck=(deckN>0 && (MathRand()%100)<InpDeckProb);
+      if(fromDeck)
+        {
+         string df[];
+         if(StringSplit(deckArr[MathRand()%deckN],'|',df)<2) continue;
+         src=df[0];
+         StringTrimLeft(src); StringTrimRight(src);
+         if(!SymbolSelect(src,true)) continue;
+         datetime day0=StringToTime(df[1]);
+         if(day0<=0) continue;
+         freeze=(datetime)((long)day0+(long)InpFreezeServerHour*3600+(long)InpFreezeServerMin*60);
+        }
+      else
+        {
+         src=syms[MathRand()%n];
+         int total0=Bars(src,PERIOD_M5);
+         if(total0<20000) continue;
+         int idx=(int)(( (double)MathRand()/32768.0 )*(total0-9000))+3000;   // random bar, away from both ends
+         datetime t[];
+         if(CopyTime(src,PERIOD_M5,idx,1,t)!=1) continue;
+         MqlDateTime dt; TimeToStruct(t[0],dt);
+         if(dt.day_of_week<1 || dt.day_of_week>5) continue;
+         dt.hour=InpFreezeServerHour; dt.min=InpFreezeServerMin; dt.sec=0;
+         freeze=StructToTime(dt);
+        }
       int digits=(int)SymbolInfoInteger(src,SYMBOL_DIGITS);
       int total=Bars(src,PERIOD_M5);
-      if(total<20000) continue;
-      int idx=(int)(( (double)MathRand()/32768.0 )*(total-9000))+3000;   // random bar, away from both ends
-      datetime t[];
-      if(CopyTime(src,PERIOD_M5,idx,1,t)!=1) continue;
-      MqlDateTime dt; TimeToStruct(t[0],dt);
-      if(dt.day_of_week<1 || dt.day_of_week>5) continue;
-      dt.hour=InpFreezeServerHour; dt.min=InpFreezeServerMin; dt.sec=0;
-      datetime freeze=StructToTime(dt);
+      if(total<5000) continue;
       datetime ctxFrom=freeze-(long)InpContextDays*86400;
       datetime futTo  =freeze+(long)InpFutureHours*3600;
       datetime firstBar[]; datetime lastBar[];
@@ -208,7 +259,7 @@ void DoBlind()
               (string)fut[i].tick_volume+"\n";
       WriteText("BlindLab\\buf_"+dst+".txt",XorHex(buf));
 
-      string key="BLIND|"+src+"|"+(string)(long)freeze+"|"+DoubleToString(factor,4)+"|"+(string)shiftSec;
+      string key="BLIND|"+src+"|"+(string)(long)freeze+"|"+DoubleToString(factor,4)+"|"+(string)shiftSec+"|"+(fromDeck?"DECK":"RAND");
       WriteText("BlindLab\\key_"+dst+".txt",XorHex(key));
 
       Alert("BlindLab BLIND ready: open chart ",dst,

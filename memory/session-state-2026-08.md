@@ -46,3 +46,10 @@ https://claude.ai/code/artifact/4b9d7e71-658c-496a-8834-baf3a7d3b816 — republi
 scratchpad file trade-lab.html; new slides pending for 01-14 + 10-chart batch.
 Repo github.com/nomss/trade-row-lab current. He won Tuesday 08-18 (beat the 15.6%
 cell); chart not yet collected as a row — ask for it.
+
+**Deck mode added 08-19:** deck.txt (480 encoded sym|date pairs from his journaled
+trades) in MQL5\Files\BlindLab. Blind rounds: InpDeckProb=70% drawn from his own
+trade-days, 30% random control; key gains 6th field DECK|RAND. Paired scoring:
+blind-call vs what live-him did that day (from journal). Row 32 = first blind round
+(TEST_2 AUDUSD 10-16-2025: plan fired, +1R, MFE +2.48R; he guessed SPX). Identity
+leaks scrubbed (description/currencies). E2E verified.
