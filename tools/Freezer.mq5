@@ -81,6 +81,13 @@ bool MakeCustom(const string name,const string origin)
          Print("BlindLab: CustomSymbolCreate(",name,") err=",GetLastError());
       // may already exist — that is fine for LIVE (we recreate data below)
      }
+   // scrub identity leaks copied from the origin symbol
+   CustomSymbolSetString(name,SYMBOL_DESCRIPTION,"Blind chart");
+   CustomSymbolSetString(name,SYMBOL_CURRENCY_BASE,"XXX");
+   CustomSymbolSetString(name,SYMBOL_CURRENCY_PROFIT,"USD");
+   CustomSymbolSetString(name,SYMBOL_CURRENCY_MARGIN,"USD");
+   CustomSymbolSetString(name,SYMBOL_ISIN,"");
+   CustomSymbolSetString(name,SYMBOL_PATH,"BlindLab\\"+name);
    return SymbolSelect(name,true);
   }
 
