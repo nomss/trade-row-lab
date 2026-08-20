@@ -8,7 +8,7 @@
 #property version   "1.00"
 #property script_show_inputs
 
-enum ENUM_FREEZE_MODE { MODE_LIVE=0, MODE_BLIND=1 };
+enum ENUM_FREEZE_MODE { MODE_LIVE=0, MODE_BLIND=1, MODE_LIVE_BLIND=2 };
 
 input ENUM_FREEZE_MODE InpMode          = MODE_LIVE;
 input string  InpSymbols                = "NASUSD,U30USD,SPXUSD,XAUUSD,USOUSD,EURUSD,GBPUSD,USDCAD,USDJPY,AUDUSD";
@@ -103,30 +103,49 @@ int NextTestIndex()
    return last+1;
   }
 
-void DoLive()
+void DoLive(const bool blind)
   {
    string syms[];
    int n=SplitSymbols(syms);
    datetime freeze=TimeCurrent();
+   // shuffled letter assignment for blind-live
+   int order[]; ArrayResize(order,n);
+   for(int i=0;i<n;i++) order[i]=i;
+   MathSrand((int)TimeLocal()+(int)GetTickCount());
+   for(int i=n-1;i>0;i--){ int j=MathRand()%(i+1); int tmp=order[i]; order[i]=order[j]; order[j]=tmp; }
+   long weeks=((long)freeze-(long)D'2023.06.05 00:00')/(7*86400);
+   long liveShift=weeks*7*86400;
    int done=0;
    for(int i=0;i<n;i++)
      {
-      string src=syms[i];
-      string dst=src+"_F";
+      string src=syms[order[i]];
+      string dst=blind ? ("LIVE_"+StringSubstr("ABCDEFGHIJKLMNOP",i,1)) : (src+"_F");
+      double factor=1.0; long shiftSec=0;
+      if(blind)
+        {
+         factor=NormalizeDouble(MathPow(10.0,((double)MathRand()/32768.0)*0.85-0.45),4);
+         shiftSec=liveShift;
+        }
       int digits=(int)SymbolInfoInteger(src,SYMBOL_DIGITS);
       MqlRates rates[];
       datetime from=freeze-(long)InpContextDays*86400;
       int got=CopyRates(src,PERIOD_M5,from,freeze,rates);
       if(got<100){ Print("BlindLab: not enough M5 history for ",src," got=",got); continue; }
       if(!MakeCustom(dst,src)) continue;
-      if(!DisguiseAndReplace(dst,rates,1.0,0,digits)) { Print("BlindLab: rates failed ",dst); continue; }
-      // key file (live is not secret; still encoded for uniformity)
-      string key="LIVE|"+src+"|"+(string)(long)freeze+"|1.0|0";
+      CustomSymbolSetInteger(dst,SYMBOL_DIGITS,digits);   // dst may be reused by a different instrument tomorrow
+      // wipe stale bars outside the new window (previous day / previous instrument)
+      CustomRatesDelete(dst,0,(datetime)((long)from-shiftSec-1));
+      CustomRatesDelete(dst,(datetime)((long)freeze-shiftSec+1),(datetime)((long)freeze-shiftSec+400*86400));
+      if(!DisguiseAndReplace(dst,rates,factor,shiftSec,digits)) { Print("BlindLab: rates failed ",dst); continue; }
+      string key="LIVE|"+src+"|"+(string)(long)freeze+"|"+DoubleToString(factor,4)+"|"+(string)shiftSec;
       WriteText("BlindLab\\key_"+dst+".txt",XorHex(key));
       done++;
      }
-   Alert("BlindLab LIVE freeze done: ",done," symbols frozen at ",TimeToString(freeze,TIME_DATE|TIME_MINUTES),
-         " — open the *_F charts. Stepper key N = +5min from real feed.");
+   if(blind)
+      Alert("BlindLab LIVE-BLIND: ",done," anonymized charts LIVE_A.. ready. No peeking at real charts until calls are committed!");
+   else
+      Alert("BlindLab LIVE freeze done: ",done," symbols frozen at ",TimeToString(freeze,TIME_DATE|TIME_MINUTES),
+            " — open the *_F charts. Stepper key N = +5min from real feed.");
   }
 
 void DoBlind()
@@ -194,7 +213,8 @@ void DoBlind()
 
 void OnStart()
   {
-   if(InpMode==MODE_LIVE) DoLive();
-   else                   DoBlind();
+   if(InpMode==MODE_LIVE)            DoLive(false);
+   else if(InpMode==MODE_LIVE_BLIND) DoLive(true);
+   else                              DoBlind();
   }
 //+------------------------------------------------------------------+
