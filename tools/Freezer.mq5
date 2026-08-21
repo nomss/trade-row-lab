@@ -92,15 +92,24 @@ bool MakeCustom(const string name,const string origin)
    return SymbolSelect(name,true);
   }
 
+int HexDigit(const ushort c)
+  {
+   if(c>='0' && c<='9') return (int)(c-'0');
+   if(c>='A' && c<='F') return (int)(c-'A')+10;
+   if(c>='a' && c<='f') return (int)(c-'a')+10;
+   return -1;
+  }
+
 string HexUnxor(const string hex)
   {
    string r="";
    int n=StringLen(hex);
    for(int i=0;i+1<n;i+=2)
      {
-      string b=StringSubstr(hex,i,2);
-      int v=(int)StringToInteger("0x"+b);
-      r+=CharToString((uchar)(v^0x5A));
+      int hi=HexDigit(StringGetCharacter(hex,i));
+      int lo=HexDigit(StringGetCharacter(hex,i+1));
+      if(hi<0 || lo<0) continue;
+      r+=CharToString((uchar)((hi*16+lo)^0x5A));
      }
    return r;
   }
