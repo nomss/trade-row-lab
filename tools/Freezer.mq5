@@ -18,6 +18,7 @@ input int     InpContextDays            = 60;    // visible history before the f
 input int     InpFutureHours            = 30;    // hidden continuation (blind mode)
 input int     InpKeepTests              = 30;    // keep newest N TEST symbols, delete older
 input int     InpDeckProb               = 70;    // % of blind rounds drawn from own-trade-day deck
+input int     InpBlindCount             = 10;    // blind charts created per run
 
 //--- xor-hex encoding for key/buffer files (casual-open protection only)
 string XorHex(const string s)
@@ -205,6 +206,9 @@ void DoBlind()
    string deckArr[];
    int deckN=LoadDeck(deckArr);
    bool fromDeck=false;
+   int made=0;
+   string names="";
+   for(int round=0;round<InpBlindCount;round++)
    for(int attempt=0;attempt<300;attempt++)
      {
       string src="";
@@ -274,11 +278,14 @@ void DoBlind()
       string key="BLIND|"+src+"|"+(string)(long)freeze+"|"+DoubleToString(factor,4)+"|"+(string)shiftSec+"|"+(fromDeck?"DECK":"RAND");
       WriteText("BlindLab\\key_"+dst+".txt",XorHex(key));
 
-      Alert("BlindLab BLIND ready: open chart ",dst,"  [deck: ",deckN,"]",
-            "  (frozen at its 9:30 EST). Guess the instrument before unmasking!");
-      return;
+      made++; names+=dst+"  ";
+      ChartOpen(dst,PERIOD_M5);
+      break;
      }
-   Alert("BlindLab: could not find a suitable random day (not enough M5 history?)");
+   if(made>0)
+      Alert("BlindLab: ",made," blind charts ready [deck: ",deckN,"]  ",names);
+   else
+      Alert("BlindLab: could not build any blind chart (not enough M5 history?)");
   }
 
 void OnStart()
