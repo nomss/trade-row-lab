@@ -10,7 +10,7 @@
 
 enum ENUM_FREEZE_MODE { MODE_LIVE=0, MODE_BLIND=1, MODE_LIVE_BLIND=2 };
 
-input ENUM_FREEZE_MODE InpMode          = MODE_LIVE;
+input ENUM_FREEZE_MODE InpMode          = MODE_BLIND;
 input string  InpSymbols                = "NASUSD,U30USD,SPXUSD,XAUUSD,USOUSD,EURUSD,GBPUSD,USDCAD,USDJPY,AUDUSD";
 input int     InpFreezeServerHour       = 16;    // blind freeze: 16:30 server = 9:30 AM EST (Coinexx)
 input int     InpFreezeServerMin        = 30;
@@ -107,17 +107,20 @@ string HexUnxor(const string hex)
 
 int LoadDeck(string &out[])
   {
+   // deck.txt: one xor-hex-encoded entry per line ("SYMBOL|YYYY.MM.DD")
    int h=FileOpen("BlindLab\\deck.txt",FILE_READ|FILE_TXT|FILE_ANSI);
    if(h==INVALID_HANDLE) return 0;
-   string enc="";
-   while(!FileIsEnding(h)) enc+=FileReadString(h);
+   ArrayResize(out,0);
+   while(!FileIsEnding(h))
+     {
+      string line=FileReadString(h);
+      if(StringLen(line)<12) continue;
+      string entry=HexUnxor(line);
+      if(StringLen(entry)<8 || StringFind(entry,"|")<1) continue;
+      int k=ArraySize(out); ArrayResize(out,k+1); out[k]=entry;
+     }
    FileClose(h);
-   string raw=HexUnxor(enc);
-   int n=StringSplit(raw,'\n',out);
-   int m=0;
-   for(int i=0;i<n;i++) if(StringLen(out[i])>6) out[m++]=out[i];
-   ArrayResize(out,m);
-   return m;
+   return ArraySize(out);
   }
 
 //--- find next free TEST index and clean old ones
@@ -262,8 +265,8 @@ void DoBlind()
       string key="BLIND|"+src+"|"+(string)(long)freeze+"|"+DoubleToString(factor,4)+"|"+(string)shiftSec+"|"+(fromDeck?"DECK":"RAND");
       WriteText("BlindLab\\key_"+dst+".txt",XorHex(key));
 
-      Alert("BlindLab BLIND ready: open chart ",dst,
-            "  (frozen at its 9:30 EST; attach Stepper, N=+5min, H=+1h). Guess the instrument before unmasking!");
+      Alert("BlindLab BLIND ready: open chart ",dst,"  [deck: ",deckN,"]",
+            "  (frozen at its 9:30 EST). Guess the instrument before unmasking!");
       return;
      }
    Alert("BlindLab: could not find a suitable random day (not enough M5 history?)");
