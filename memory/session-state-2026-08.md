@@ -53,3 +53,13 @@ trade-days, 30% random control; key gains 6th field DECK|RAND. Paired scoring:
 blind-call vs what live-him did that day (from journal). Row 32 = first blind round
 (TEST_2 AUDUSD 10-16-2025: plan fired, +1R, MFE +2.48R; he guessed SPX). Identity
 leaks scrubbed (description/currencies). E2E verified.
+
+**Phone trainer LIVE 08-22:** https://claude.ai/code/artifact/a9187089-2979-48c2-bf50-8c7832d6cab9
+Batch 1 = P001-P010 (7 deck/3 random). Pipeline: MT5 python API (pip MetaTrader5,
+initialize path Coinexx terminal64.exe; tz-aware datetimes required; ~100k bar cap
+= depth to ~2025-03) -> blindlab-phone/*.npz -> make_batch.py N (deck_days.json 473,
+state.json tracks used days+next id, keys/Pnnn.json hold sym/day/factor/deck/continuation
+SEALED) -> trainer.html (lwc inlined, price scale hidden) -> republish same artifact.
+His calls: localStorage; "Copy calls" -> pastes "BLINDLAB {json}" blob here; decode vs
+keys/, rows blind=yes phone=yes. Cold calls only: entry=freeze close, SL=1bar, TP=1R,
+both-hit-same-bar=loss. Desk campaign: seal to 150, ~21@9:30 done, then 45/50 stops.
