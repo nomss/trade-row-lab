@@ -41,6 +41,10 @@ else:
         lad["days"][tag] = {"rung_next": 0, "status": "excluded"}
 v1_state = json.load(open(os.path.join(HERE, "state.json")))
 blocked = set(lad["days"]) | set(v1_state["used"])
+import glob as _g
+for _p in _g.glob(os.path.join(HERE, "keys", "L*.json")):
+    _k = json.load(open(_p))
+    blocked.add(f"{_k['sym']}|{_k['day']}")
 
 def day_bounds(sym, day_epoch, rung):
     t = data[sym][0]
@@ -145,10 +149,19 @@ deck_n = sum(1 for k in keys if k["deck"] and not k["redeal_of"])
 print(f"batch: {len(rounds)} rounds  fresh {BATCH_FRESH} ({deck_n} deck) + {BATCH_REDEAL} re-deals + {n_requeue} requeued")
 print("ids", rounds[0]["id"], "..", f"L{lad['next_num']-1:03d}")
 
+tr = f"{lad.get('tranche_next', 3):03d}"
+lad['tranche_next'] = lad.get('tranche_next', 3) + 1
+json.dump(lad, open(lad_path, "w"), indent=1)
+os.makedirs(os.path.join(HERE, "public", "t"), exist_ok=True)
+tpath = os.path.join(HERE, "public", "t", tr + ".json")
+json.dump(rounds, open(tpath, "w"), separators=(',', ':'))
+man_path = os.path.join(HERE, "public", "t", "index.json")
+man = json.load(open(man_path)) if os.path.exists(man_path) else {"tranches": []}
+man["tranches"].append({"t": tr, "ids": [r["id"] for r in rounds]})
+json.dump(man, open(man_path, "w"))
 LWC = open(os.path.join(HERE, "lwc.js"), encoding="utf-8").read()
 TPL = open(os.path.join(HERE, "trainer_v2_template.html"), encoding="utf-8").read()
-page = TPL.replace("__LWC__", LWC).replace("__ROUNDS__", json.dumps(rounds, separators=(',', ':')))
-os.makedirs(os.path.join(HERE, "public"), exist_ok=True)
+page = TPL.replace("__LWC__", LWC)
 out = os.path.join(HERE, "public", "index.html")
 open(out, "w", encoding="utf-8").write(page)
-print(f"public/index.html: {os.path.getsize(out)//1024} KB")
+print(f"tranche {tr}: t/{tr}.json {os.path.getsize(tpath)//1024} KB; index.html {os.path.getsize(out)//1024} KB")
