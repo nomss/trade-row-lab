@@ -63,3 +63,14 @@ SEALED) -> trainer.html (lwc inlined, price scale hidden) -> republish same arti
 His calls: localStorage; "Copy calls" -> pastes "BLINDLAB {json}" blob here; decode vs
 keys/, rows blind=yes phone=yes. Cold calls only: entry=freeze close, SL=1bar, TP=1R,
 both-hit-same-bar=loss. Desk campaign: seal to 150, ~21@9:30 done, then 45/50 stops.
+
+**Trainer status 08-22 end-of-day:** LIVE at
+https://claude.ai/code/artifact/a9187089-2979-48c2-bf50-8c7832d6cab9 — 50 rounds
+P001-P050, chart+commits+resume WORKING on his phone (P002 skip committed).
+Auto-sync via artifact capability: UNVERIFIED after 3 attempts (WebFetch 15-min cache
++ untested live-doc patch semantics for script-set textContent). DECISION: stop
+experimenting; calls collected via Copy-calls button paste; v3 = Firebase
+Hosting+Firestore (needs his one Google login at desk). Keys sealed in
+blindlab-phone/keys/. Known fixes shipped: alert()->inline err (sandbox suppresses
+alerts), no guess field, hex/newline escape bugs (syntax-gate all patches before
+publish). Desk campaign unchanged: sealed to 150.
