@@ -100,10 +100,8 @@ def deal(sym, day_s, rung, from_deck, redeal_of=None):
     lb = bars[-1]
     if (lb[4] > lb[1] and lb[2] < sma20 + tol) or (lb[4] < lb[1] and lb[3] > sma20 - tol):
         return "auto"
-    rid = f"L{lad['next_num']:03d}"
-    lad['next_num'] += 1
-    rd = {"id": rid, "f": est_label(rung), "bars": bars}
-    # v1 label-only run rule (Noman's): 2 same-color, overlap<50%, gap>1 ATR
+    # ARMED run rule (Noman's, 2026-08-23): 2 same-color, overlap<50%,
+    # last candle >1.5 ATR clear of SMA -> machine skip (0/111 collisions)
     seg = bars[-2:]
     _c1 = 1 if seg[0][4] > seg[0][1] else (-1 if seg[0][4] < seg[0][1] else 0)
     _c2 = 1 if seg[1][4] > seg[1][1] else (-1 if seg[1][4] < seg[1][1] else 0)
@@ -112,12 +110,13 @@ def deal(sym, day_s, rung, from_deck, redeal_of=None):
         _mn = min(seg[0][2]-seg[0][3], seg[1][2]-seg[1][3])
         _atr = sum(x[2]-x[3] for x in bars[-21:-1]) / 20.0
         if _mn > 0 and _atr and _in/_mn <= 0.5:
-            _hi = max(x[2] for x in seg); _lo = min(x[3] for x in seg)
             _b = seg[1]
             _gap = (sma20 - _b[2])/_atr if _b[2] < sma20 else ((_b[3] - sma20)/_atr if _b[3] > sma20 else -1)
             if _gap > 1.5:
-                rd["as2"] = f"run: 2x{'green' if _c1==1 else 'red'} - ovl {_in/_mn*100:.0f}% - last {_gap:.1f} ATR clear"
-    rounds.append(rd)
+                return "auto"
+    rid = f"L{lad['next_num']:03d}"
+    lad['next_num'] += 1
+    rounds.append({"id": rid, "f": est_label(rung), "bars": bars})
     keys.append({"id": rid, "sym": sym, "day": day_s, "rung": rung, "freeze_server": freeze,
                  "shift": shift, "deck": from_deck, "redeal_of": redeal_of})
     return True
