@@ -11,6 +11,7 @@ import numpy as np, json, random, os, datetime, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SYMS = "NASUSD,U30USD,SPXUSD,XAUUSD,USOUSD,EURUSD,GBPUSD,USDCAD,USDJPY,AUDUSD".split(',')
 BATCH_FRESH, BATCH_REDEAL = 42, 8
+REQUEUE_CAP = 30                        # keep a fresh/requeue mix per tranche
 DECK_PROB = 0.7
 CTX_DAYS = 10
 EST_OFF = 7 * 3600                      # server = EST+7
@@ -18,7 +19,7 @@ ANCHOR = datetime.datetime(2023, 6, 5).timestamp()
 WEEK = 7 * 86400
 RUNG1_H, RUNG1_M = 16, 30               # server clock at rung 1
 MAX_RUNG = 30                           # 16:30 .. 18:55 server = 9:30 .. 11:55 EST
-TODAY = datetime.date(2026, 8, 23)
+TODAY = datetime.date.today()
 
 data = {}
 for s in SYMS:
@@ -42,9 +43,11 @@ else:
 v1_state = json.load(open(os.path.join(HERE, "state.json")))
 blocked = set(lad["days"]) | set(v1_state["used"])
 import glob as _g
+dealt_pairs = set()
 for _p in _g.glob(os.path.join(HERE, "keys", "L*.json")):
     _k = json.load(open(_p))
     blocked.add(f"{_k['sym']}|{_k['day']}")
+    dealt_pairs.add((f"{_k['sym']}|{_k['day']}", _k.get("rung", 1)))
 
 def day_bounds(sym, day_epoch, rung):
     t = data[sym][0]
@@ -63,7 +66,7 @@ def est_label(rung):
     h12 = (m // 60 - 1) % 12 + 1
     return f"{h12}:{m % 60:02d} AM EST" if m // 60 < 12 else f"{h12}:{m % 60:02d} PM EST"
 
-rng = random.Random(20260822)
+rng = random.Random(20260822 + lad['next_num'])   # varies per run - no repeated shuffles
 
 # ---- requeue-eligible days (>=100 rounds AND >=14 days, whichever later) ----
 elig = []
@@ -99,10 +102,13 @@ def deal(sym, day_s, rung, from_deck, redeal_of=None):
 # requeued days first (none expected before 2026-09-01)
 n_requeue = 0
 for tag in elig:
-    if len(rounds) >= BATCH_FRESH:
+    if len(rounds) >= min(BATCH_FRESH, REQUEUE_CAP):
         break
+    if (tag, lad["days"][tag]["rung_next"]) in dealt_pairs:
+        continue                        # this exact frame already staged/dealt
     sym, day_s = tag.split("|")
     if sym in data and deal(sym, day_s, lad["days"][tag]["rung_next"], True):
+        dealt_pairs.add((tag, lad["days"][tag]["rung_next"]))
         n_requeue += 1
 
 attempts = 0
