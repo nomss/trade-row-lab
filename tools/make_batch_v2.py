@@ -1,4 +1,5 @@
-"""BlindLab v2 - ladder batch generator.
+"""BlindLab v2 - ladder batch generator. ADMISSIONS CLOSED 2026-08-23:
+requeue-only tranches drain the admitted days to rung 30 (11:55).
 One frozen frame per round. No disguise of price (real values), pair hidden,
 dates week-shifted to anchor (weekday+clock preserved, shown in EST).
 Ladder: rung 1 = 9:30 AM EST, +5 min per rung, last 11:55.
@@ -11,7 +12,7 @@ import numpy as np, json, random, os, datetime, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SYMS = "NASUSD,U30USD,SPXUSD,XAUUSD,USOUSD,EURUSD,GBPUSD,USDCAD,USDJPY,AUDUSD".split(',')
 BATCH_FRESH, BATCH_REDEAL = 42, 8
-REQUEUE_CAP = 30                        # keep a fresh/requeue mix per tranche
+REQUEUE_CAP = BATCH_FRESH               # admissions closed - requeue-only
 DECK_PROB = 0.7
 CTX_DAYS = 10
 EST_OFF = 7 * 3600                      # server = EST+7
@@ -111,28 +112,16 @@ for tag in elig:
         dealt_pairs.add((tag, lad["days"][tag]["rung_next"]))
         n_requeue += 1
 
-attempts = 0
-while len(rounds) < BATCH_FRESH and attempts < 20000:
-    attempts += 1
-    from_deck = rng.random() < DECK_PROB
-    if from_deck:
-        sym, day_s = rng.choice(deck)
-    else:
-        sym = rng.choice(SYMS)
-        t = data[sym][0]
-        d = datetime.datetime.utcfromtimestamp(int(rng.choice(t[3000:-3000])))
-        if d.weekday() > 4:
-            continue
-        day_s = f"{d:%Y.%m.%d}"
-    tag = f"{sym}|{day_s}"
-    if sym not in data or tag in blocked:
-        continue
-    if deal(sym, day_s, 1, from_deck):
-        blocked.add(tag)
-
-# consistency re-deals: dup frames of rounds 1-15 into slots 31-50
-srcs = rng.sample(range(min(15, len(rounds))), BATCH_REDEAL)
-slots = sorted(rng.sample(range(30, BATCH_FRESH + BATCH_REDEAL), BATCH_REDEAL))
+if not rounds:
+    print("LADDER DRAINED - no eligible days; campaign complete, run the final reveal")
+    raise SystemExit(0)
+n_redeal = max(2, round(len(rounds) * 0.16)) if len(rounds) >= 12 else min(2, len(rounds))
+if len(rounds) < BATCH_FRESH:
+    print(f"short tranche: only {len(rounds)} eligible requeues")
+# consistency re-deals: dup frames from the front into the back half
+srcs = rng.sample(range(min(15, len(rounds))), min(n_redeal, len(rounds)))
+lo = max(1, min(30, len(rounds) - n_redeal))
+slots = sorted(rng.sample(range(lo, len(rounds) + len(srcs)), len(srcs)))
 for slot, si in zip(slots, srcs):
     src = rounds[si]
     rid = f"L{lad['next_num']:03d}"
@@ -151,8 +140,7 @@ os.makedirs(os.path.join(HERE, "keys"), exist_ok=True)
 for k in keys:
     json.dump(k, open(os.path.join(HERE, "keys", k["id"] + ".json"), "w"))
 json.dump(lad, open(lad_path, "w"), indent=1)
-deck_n = sum(1 for k in keys if k["deck"] and not k["redeal_of"])
-print(f"batch: {len(rounds)} rounds  fresh {BATCH_FRESH} ({deck_n} deck) + {BATCH_REDEAL} re-deals + {n_requeue} requeued")
+print(f"batch: {len(rounds)} rounds = {n_requeue} requeued + {len(srcs)} re-deals (admissions closed)")
 print("ids", rounds[0]["id"], "..", f"L{lad['next_num']-1:03d}")
 
 tr = f"{lad.get('tranche_next', 3):03d}"
