@@ -2,7 +2,7 @@
 One frozen frame per round. No disguise of price (real values), pair hidden,
 dates week-shifted to anchor (weekday+clock preserved, shown in EST).
 Ladder: rung 1 = 9:30 AM EST, +5 min per rung, last 11:55.
-Skip requeues day at next rung after >=100 rounds AND >=14 days (later).
+Skip requeues day at next rung after >=100 rounds OR >=14 days (first).
 50 rounds/batch: 42 fresh + 8 consistency re-deals (dups of rounds 1-15).
 Sealed keys hold sym/day/rung only; outcomes computed from npz at reveal.
 """
@@ -18,7 +18,7 @@ ANCHOR = datetime.datetime(2023, 6, 5).timestamp()
 WEEK = 7 * 86400
 RUNG1_H, RUNG1_M = 16, 30               # server clock at rung 1
 MAX_RUNG = 30                           # 16:30 .. 18:55 server = 9:30 .. 11:55 EST
-TODAY = datetime.date(2026, 8, 22)
+TODAY = datetime.date(2026, 8, 23)
 
 data = {}
 for s in SYMS:
@@ -71,7 +71,7 @@ for tag, v in lad["days"].items():
     if v.get("status") != "open" or v.get("rung_next", 0) < 2 or v["rung_next"] > MAX_RUNG:
         continue
     d0 = datetime.date.fromisoformat(v["last_skip_date"].replace(".", "-"))
-    if (TODAY - d0).days >= 14 and lad["round_seq"] - v["last_skip_seq"] >= 100:
+    if (TODAY - d0).days >= 14 or lad["round_seq"] - v["last_skip_seq"] >= 100:
         elig.append(tag)
 rng.shuffle(elig)
 
