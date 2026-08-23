@@ -102,7 +102,22 @@ def deal(sym, day_s, rung, from_deck, redeal_of=None):
         return "auto"
     rid = f"L{lad['next_num']:03d}"
     lad['next_num'] += 1
-    rounds.append({"id": rid, "f": est_label(rung), "bars": bars})
+    rd = {"id": rid, "f": est_label(rung), "bars": bars}
+    # v1 label-only run rule (Noman's): 2 same-color, overlap<50%, gap>1 ATR
+    seg = bars[-2:]
+    _c1 = 1 if seg[0][4] > seg[0][1] else (-1 if seg[0][4] < seg[0][1] else 0)
+    _c2 = 1 if seg[1][4] > seg[1][1] else (-1 if seg[1][4] < seg[1][1] else 0)
+    if _c1 and _c1 == _c2:
+        _in = max(0.0, min(seg[0][2], seg[1][2]) - max(seg[0][3], seg[1][3]))
+        _mn = min(seg[0][2]-seg[0][3], seg[1][2]-seg[1][3])
+        _atr = sum(x[2]-x[3] for x in bars[-21:-1]) / 20.0
+        if _mn > 0 and _atr and _in/_mn <= 0.5:
+            _hi = max(x[2] for x in seg); _lo = min(x[3] for x in seg)
+            _b = seg[1]
+            _gap = (sma20 - _b[2])/_atr if _b[2] < sma20 else ((_b[3] - sma20)/_atr if _b[3] > sma20 else -1)
+            if _gap > 1.5:
+                rd["as2"] = f"run: 2x{'green' if _c1==1 else 'red'} - ovl {_in/_mn*100:.0f}% - last {_gap:.1f} ATR clear"
+    rounds.append(rd)
     keys.append({"id": rid, "sym": sym, "day": day_s, "rung": rung, "freeze_server": freeze,
                  "shift": shift, "deck": from_deck, "redeal_of": redeal_of})
     return True
@@ -186,3 +201,5 @@ page = TPL.replace("__LWC__", LWC).replace("__VER__", _v)
 out = os.path.join(HERE, "public", "index.html")
 open(out, "w", encoding="utf-8").write(page)
 print(f"tranche {tr}: t/{tr}.json {os.path.getsize(tpath)//1024} KB; index.html {os.path.getsize(out)//1024} KB")
+import subprocess as _sp
+_sp.run([__import__("sys").executable, os.path.join(HERE, "update_progress.py")])
