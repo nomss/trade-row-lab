@@ -85,16 +85,23 @@ def deal(sym, day_s, rung, from_deck, redeal_of=None):
     day_epoch = int(day.timestamp() // 86400 * 86400)
     b = day_bounds(sym, day_epoch, rung)
     if b is None:
-        return False
+        return None                     # data gap at this rung
     c0, c1, freeze = b
     t, o, h, l, c = data[sym]
     shift = int((freeze - ANCHOR) // WEEK) * WEEK + EST_OFF
     ref = float(o[c1 - 1])
     dig = 5 if ref < 50 else (3 if ref < 500 else 2)
-    rid = f"L{lad['next_num']:03d}"
-    lad['next_num'] += 1
     bars = [[int(t[i]) - shift, round(float(o[i]), dig), round(float(h[i]), dig),
              round(float(l[i]), dig), round(float(c[i]), dig)] for i in range(c0, c1)]
+    # ARMED auto-skip (2026-08-23, Noman): served candle fully one side of
+    # SMA20 (0.15*ATR tolerance) and counter-colored -> machine skips it
+    sma20 = sum(b[4] for b in bars[-20:]) / 20.0
+    tol = 0.15 * (sum(b[2] - b[3] for b in bars[-21:-1]) / 20.0)
+    lb = bars[-1]
+    if (lb[4] > lb[1] and lb[2] < sma20 + tol) or (lb[4] < lb[1] and lb[3] > sma20 - tol):
+        return "auto"
+    rid = f"L{lad['next_num']:03d}"
+    lad['next_num'] += 1
     rounds.append({"id": rid, "f": est_label(rung), "bars": bars})
     keys.append({"id": rid, "sym": sym, "day": day_s, "rung": rung, "freeze_server": freeze,
                  "shift": shift, "deck": from_deck, "redeal_of": redeal_of})
@@ -102,15 +109,30 @@ def deal(sym, day_s, rung, from_deck, redeal_of=None):
 
 # requeued days first (none expected before 2026-09-01)
 n_requeue = 0
+auto_n = 0
 for tag in elig:
     if len(rounds) >= min(BATCH_FRESH, REQUEUE_CAP):
         break
-    if (tag, lad["days"][tag]["rung_next"]) in dealt_pairs:
-        continue                        # this exact frame already staged/dealt
     sym, day_s = tag.split("|")
-    if sym in data and deal(sym, day_s, lad["days"][tag]["rung_next"], True):
-        dealt_pairs.add((tag, lad["days"][tag]["rung_next"]))
-        n_requeue += 1
+    if sym not in data:
+        continue
+    day = lad["days"][tag]
+    rung = day["rung_next"]
+    while rung <= MAX_RUNG:
+        if (tag, rung) in dealt_pairs:
+            break                       # already staged undealt at this rung
+        res = deal(sym, day_s, rung, True)
+        if res is True:
+            dealt_pairs.add((tag, rung))
+            n_requeue += 1
+            break
+        lad.setdefault("autoskips", []).append(
+            {"tag": tag, "rung": rung, "why": "rule" if res == "auto" else "gap", "d": str(TODAY)})
+        auto_n += 1
+        rung += 1
+        day["rung_next"] = rung
+    if rung > MAX_RUNG:
+        day["status"] = "done"
 
 if not rounds:
     print("LADDER DRAINED - no eligible days; campaign complete, run the final reveal")
@@ -126,7 +148,9 @@ for slot, si in zip(slots, srcs):
     src = rounds[si]
     rid = f"L{lad['next_num']:03d}"
     lad['next_num'] += 1
-    rounds.insert(slot, {"id": rid, "f": src["f"], "d": src["id"]})
+    dup = {"id": rid, "f": src["f"], "d": src["id"]}
+    if src.get("as"): dup["as"] = 1
+    rounds.insert(slot, dup)
     sk = next(k for k in keys if k["id"] == src["id"])
     keys.append({"id": rid, "sym": sk["sym"], "day": sk["day"], "rung": sk["rung"],
                  "freeze_server": sk["freeze_server"], "shift": sk["shift"],
@@ -140,7 +164,7 @@ os.makedirs(os.path.join(HERE, "keys"), exist_ok=True)
 for k in keys:
     json.dump(k, open(os.path.join(HERE, "keys", k["id"] + ".json"), "w"))
 json.dump(lad, open(lad_path, "w"), indent=1)
-print(f"batch: {len(rounds)} rounds = {n_requeue} requeued + {len(srcs)} re-deals (admissions closed)")
+print(f"batch: {len(rounds)} rounds = {n_requeue} requeued + {len(srcs)} re-deals | {auto_n} auto-skipped")
 print("ids", rounds[0]["id"], "..", f"L{lad['next_num']-1:03d}")
 
 tr = f"{lad.get('tranche_next', 3):03d}"
@@ -155,7 +179,10 @@ man["tranches"].append({"t": tr, "ids": [r["id"] for r in rounds]})
 json.dump(man, open(man_path, "w"))
 LWC = open(os.path.join(HERE, "lwc.js"), encoding="utf-8").read()
 TPL = open(os.path.join(HERE, "trainer_v2_template.html"), encoding="utf-8").read()
-page = TPL.replace("__LWC__", LWC)
+import datetime as _dt
+_n = _dt.datetime.now()
+_v = f"v {_n.month}/{_n.day} {(_n.hour-1)%12+1}:{_n.minute:02d} {'AM' if _n.hour<12 else 'PM'}"
+page = TPL.replace("__LWC__", LWC).replace("__VER__", _v)
 out = os.path.join(HERE, "public", "index.html")
 open(out, "w", encoding="utf-8").write(page)
 print(f"tranche {tr}: t/{tr}.json {os.path.getsize(tpath)//1024} KB; index.html {os.path.getsize(out)//1024} KB")
